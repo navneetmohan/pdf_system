@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# Virtual Environment
+venv/
+env/
+.venv/
+.env/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database (SQLite)
+data/*.db
+data/*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Uploads & Cache
+storage/uploads/*
+storage/cache/*
+!storage/uploads/.gitkeep
+!storage/cache/.gitkeep
+
+# Docker
+docker-compose.override.yml
+
+# Environment / Secrets
+key.py
+*.key
+*.pem
+*.p12
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Flask / Gunicorn
+instance/
+.webassets-cache
+
+# Testing
+.coverage
+coverage/
+htmlcov/
+.pytest_cache/
+

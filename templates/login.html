@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - PDF Search System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Login</h1>
+        <nav>
+            <a href="{{ url_for('views.index') }}">Home</a>
+        </nav>
+        <form id="loginForm">
+            <input type="text" id="username" name="username" placeholder="Username" required>
+            <input type="password" id="password" name="password" placeholder="Password" required>
+            <button type="submit">Login</button>
+            <div id="loginMessage" class="toast error" style="display:none;"></div>
+        </form>
+
+    </div>
+    <script>
+        const form = document.getElementById('loginForm');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            const msgEl = document.getElementById('loginMessage');
+            msgEl.textContent = '';
+            msgEl.style.display = 'none';
+
+
+            try {
+                const resp = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password }),
+                    credentials: 'same-origin',
+                });
+
+                const data = await resp.json().catch(() => ({}));
+
+                if (!resp.ok) {
+                    msgEl.textContent = data?.error || 'Login failed.';
+                    msgEl.style.display = 'block';
+                    return;
+
+                }
+
+                // Successful login: redirect to home
+                window.location.href = '/';
+            } catch (err) {
+                msgEl.textContent = 'Login failed (network/server error).';
+                msgEl.style.display = 'block';
+
+            }
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select File - PDF Search System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Select a File</h1>
+        <nav>
+            <a href="{{ url_for('views.index') }}">Home</a>
+            <a href="{{ url_for('views.search_page') }}">Search</a>
+        </nav>
+        <p>Select a PDF file to search within.</p>
+    </div>
+</body>
+</html>

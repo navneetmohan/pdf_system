@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temp Upload - PDF Search System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Temporary Upload</h1>
+        <nav>
+            <a href="{{ url_for('views.index') }}">Home</a>
+            <a href="{{ url_for('views.search_page') }}">Search</a>
+        </nav>
+        <p>Upload a temporary PDF (expires after 14 hours).</p>
+        <form id="tempUploadForm" enctype="multipart/form-data">
+            <input type="file" id="pdf" name="pdf" accept=".pdf" required>
+            <button type="submit">Upload</button>
+        </form>
+    </div>
+</body>
+</html>

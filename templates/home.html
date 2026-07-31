@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Search System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Search & Management System</h1>
+        <nav>
+            <a href="{{ url_for('views.search_page') }}">Search</a>
+            <a href="{{ url_for('views.select_page') }}">Select File</a>
+            <a href="{{ url_for('views.login_page') }}">Login</a>
+        </nav>
+        <p>Welcome to the PDF Search System. Use the navigation above to get started.</p>
+    </div>
+</body>
+</html>

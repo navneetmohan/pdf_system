@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search - PDF Search System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Search PDFs</h1>
+        <nav>
+            <a href="{{ url_for('views.index') }}">Home</a>
+            <a href="{{ url_for('views.select_page') }}">Select File</a>
+        </nav>
+        <form id="searchForm">
+            <input type="text" id="query" name="query" placeholder="Enter search query..." required>
+            <button type="submit">Search</button>
+        </form>
+        <div id="results"></div>
+    </div>
+    <script>
+        document.getElementById('searchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = document.getElementById('query').value;
+            // Search functionality to be implemented
+            document.getElementById('results').innerHTML = '<p>Searching for: ' + query + '</p>';
+        });
+    </script>
+</body>
+</html>
