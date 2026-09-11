@@ -39,7 +39,10 @@ def _cleanup():
 def list_files():
     """
     GET /api/files?category_id=<int>&page=1&page_size=20
-    Returns paginated file list. If category_id omitted, returns all categories + counts.
+    Returns paginated file list.
+    If all=1: returns all files.
+    If temp=1: returns temp files.
+    If category_id omitted and neither all nor temp: returns all categories + counts.
     """
     page, page_size = validate_pagination(request.args, current_app.config["DEFAULT_PAGE_SIZE"])
     category_id = request.args.get("category_id", type=int)
@@ -51,6 +54,15 @@ def list_files():
         files, total = FileRepository.list_by_category(category_id, page, page_size)
         return paginated([f.to_dict() for f in files], total, page, page_size,
                          category=cat.to_dict())
+
+    if request.args.get("all") in ("1", "true"):
+        include_temp = request.args.get("include_temp") in ("1", "true")
+        files, total = FileRepository.list_all(page, page_size, include_temp=include_temp)
+        return paginated([f.to_dict() for f in files], total, page, page_size)
+
+    if request.args.get("temp") in ("1", "true"):
+        files, total = FileRepository.list_temp(page, page_size)
+        return paginated([f.to_dict() for f in files], total, page, page_size)
 
     # Return category list with file counts
     cats = CategoryRepository.list_all()

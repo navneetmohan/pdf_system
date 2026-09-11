@@ -3,22 +3,254 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - PDF Search System</title>
+    <title>Admin Control Center - PDF Search System</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>Admin Panel</h1>
-        <nav>
-            <a href="{{ url_for('views.index') }}">Home</a>
-            <a href="{{ url_for('views.upload_page') }}">Upload</a>
-            <a href="{{ url_for('views.delete_page') }}">Delete</a>
+        <header class="header-section">
+            <div>
+                <h1>⚙️ Admin Control Center</h1>
+                <p class="subtitle">Manage document categories, permanent PDF storage, and system lifecycle.</p>
+            </div>
+            <div class="user-badge">
+                👤 <span>{{ current_username }}</span>
+                <span class="admin-pill">Admin</span>
+            </div>
+        </header>
+
+        <nav class="app-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('views.index') }}">🏠 Home</a>
+                <a href="{{ url_for('views.search_page') }}">🔍 Search</a>
+                <a href="{{ url_for('views.select_page') }}">📚 Browse Files</a>
+                <a href="{{ url_for('views.temp_upload_page') }}">⏱️ Temp Upload</a>
+                <a href="{{ url_for('views.admin_page') }}" class="active">⚙️ Admin</a>
+                <a href="{{ url_for('views.upload_page') }}">⬆️ Upload</a>
+                <a href="{{ url_for('views.delete_page') }}">🗑️ Delete</a>
+            </div>
+            <div class="nav-user">
+                <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+            </div>
         </nav>
-        <p>Admin functions:</p>
-        <ul>
-            <li><a href="{{ url_for('views.upload_page') }}">Upload PDF</a></li>
-            <li><a href="{{ url_for('views.delete_page') }}">Delete PDF</a></li>
-        </ul>
+
+        <!-- Stats Overview -->
+        <div class="grid-3" style="margin-bottom: 28px;">
+            <div class="stat-card">
+                <div class="stat-icon">📁</div>
+                <div>
+                    <div id="statCats" class="stat-val">—</div>
+                    <div class="stat-label">Categories</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📑</div>
+                <div>
+                    <div id="statPermFiles" class="stat-val">—</div>
+                    <div class="stat-label">Permanent Files</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⏱️</div>
+                <div>
+                    <div id="statTempFiles" class="stat-val">—</div>
+                    <div class="stat-label">Temporary Files</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Management Card -->
+        <div class="card" style="margin-bottom: 28px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+                <div>
+                    <h2>📁 Category Management</h2>
+                    <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 0;">
+                        Categories define directory namespaces and allow scoped searches.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Create Category Form -->
+            <form id="createCatForm" style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;">
+                <div style="flex: 1; min-width: 240px;">
+                    <input type="text" id="catNameInput" placeholder="New Category Name (e.g. Invoices, Technical Manuals)" required style="margin-bottom: 0;">
+                </div>
+                <button type="submit" class="btn btn-primary" id="createCatBtn">+ Add Category</button>
+            </form>
+
+            <!-- Categories Table -->
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category Name</th>
+                            <th>Slug (Storage Path)</th>
+                            <th>Documents</th>
+                            <th>Created</th>
+                            <th style="text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="categoriesTbody">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: var(--text-muted);">Loading categories...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Quick Admin Links -->
+        <h2>⚡ Quick Management Tools</h2>
+        <div class="grid-2">
+            <div class="card card-hover">
+                <h3>⬆️ Ingest Documents</h3>
+                <p>Upload new PDF files into specific categories and dispatch background FTS5 indexing.</p>
+                <a href="{{ url_for('views.upload_page') }}" class="btn btn-primary btn-sm" style="margin-top: 10px;">Upload PDF</a>
+            </div>
+            <div class="card card-hover">
+                <h3>🗑️ File Cleanup & Deletion</h3>
+                <p>Browse all stored documents, inspect sizes and pages, and permanently remove files with cascading index cleanup.</p>
+                <a href="{{ url_for('views.delete_page') }}" class="btn btn-danger btn-sm" style="margin-top: 10px;">Delete Files</a>
+            </div>
+        </div>
     </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        async function initAdminPage() {
+            await Promise.all([loadAdminStats(), loadCategoriesList()]);
+        }
+
+        async function loadAdminStats() {
+            try {
+                const [catsRes, permRes, tempRes] = await Promise.all([
+                    fetch('/api/categories'),
+                    fetch('/api/files?all=1&page_size=1'),
+                    fetch('/api/files?temp=1&page_size=1')
+                ]);
+
+                if (catsRes.ok) {
+                    const cData = await catsRes.json();
+                    document.getElementById('statCats').textContent = (cData.categories || []).length;
+                }
+
+                if (permRes.ok) {
+                    const pData = await permRes.json();
+                    document.getElementById('statPermFiles').textContent = pData.pagination?.total ?? 0;
+                }
+
+                if (tempRes.ok) {
+                    const tData = await tempRes.json();
+                    document.getElementById('statTempFiles').textContent = tData.pagination?.total ?? 0;
+                }
+            } catch (err) {
+                console.error('Stats loading error:', err);
+            }
+        }
+
+        async function loadCategoriesList() {
+            const tbody = document.getElementById('categoriesTbody');
+            try {
+                const res = await fetch('/api/categories');
+                if (res.ok) {
+                    const data = await res.json();
+                    const categories = data.categories || [];
+                    tbody.innerHTML = '';
+
+                    if (categories.length === 0) {
+                        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">No categories created yet. Add one above!</td></tr>`;
+                        return;
+                    }
+
+                    categories.forEach(cat => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><strong>${escapeHtml(cat.name)}</strong></td>
+                            <td><code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 13px;">${escapeHtml(cat.slug)}</code></td>
+                            <td><span class="badge badge-category">${cat.file_count || 0} files</span></td>
+                            <td>${formatDate(cat.created_at)}</td>
+                            <td style="text-align: right;">
+                                <button class="btn btn-danger btn-sm" onclick="deleteCategory(${cat.id}, '${escapeHtml(cat.name)}')">Delete</button>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load categories:', err);
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--danger);">Failed to load categories.</td></tr>`;
+            }
+        }
+
+        // Create Category
+        document.getElementById('createCatForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('catNameInput');
+            const name = input.value.trim();
+            if (!name) return;
+
+            const btn = document.getElementById('createCatBtn');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/categories', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+
+                const data = await res.json();
+                if (res.status === 201) {
+                    showToast(`Category "${data.category.name}" created!`, 'success');
+                    input.value = '';
+                    await Promise.all([loadCategoriesList(), loadAdminStats()]);
+                } else if (res.status === 409) {
+                    showToast(data.error || 'A category with this name already exists.', 'error');
+                } else {
+                    showToast(data.error || 'Failed to create category.', 'error');
+                }
+            } catch (err) {
+                console.error('Create category error:', err);
+                showToast('Network error while creating category.', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // Delete Category
+        async function deleteCategory(catId, name) {
+            const confirmed = confirm(
+                `WARNING: Deleting category "${name}" will permanently delete ALL documents stored in it, their physical PDF files on disk, and all their FTS5 search index entries!\n\nAre you sure you want to proceed?`
+            );
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`/api/categories/${catId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(data.message || `Category "${name}" deleted.`, 'success');
+                    await Promise.all([loadCategoriesList(), loadAdminStats()]);
+                } else {
+                    showToast(data.error || 'Failed to delete category.', 'error');
+                }
+            } catch (err) {
+                console.error('Delete category error:', err);
+                showToast('Network error while deleting category.', 'error');
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                "'": '&#39;',
+                '"': '&quot;'
+            }[tag] || tag));
+        }
+
+        window.addEventListener('DOMContentLoaded', initAdminPage);
+    </script>
 </body>
 </html>

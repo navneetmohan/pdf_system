@@ -8,59 +8,111 @@
 </head>
 <body>
     <div class="container">
-        <h1>Login</h1>
-        <nav>
-            <a href="{{ url_for('views.index') }}">Home</a>
-        </nav>
-        <form id="loginForm">
-            <input type="text" id="username" name="username" placeholder="Username" required>
-            <input type="password" id="password" name="password" placeholder="Password" required>
-            <button type="submit">Login</button>
-            <div id="loginMessage" class="toast error" style="display:none;"></div>
-        </form>
+        <header class="header-section">
+            <div>
+                <h1>🔐 Sign In</h1>
+                <p class="subtitle">Access administrative controls to manage categories and upload permanent documents.</p>
+            </div>
+        </header>
 
+        <nav class="app-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('views.index') }}">🏠 Home</a>
+                <a href="{{ url_for('views.search_page') }}">🔍 Search</a>
+                <a href="{{ url_for('views.select_page') }}">📚 Browse Files</a>
+                <a href="{{ url_for('views.temp_upload_page') }}">⏱️ Temp Upload</a>
+            </div>
+            <div class="nav-user">
+                <a href="{{ url_for('views.index') }}" class="btn btn-secondary btn-sm">Back to Home</a>
+            </div>
+        </nav>
+
+        <div class="card" style="max-width: 440px; margin: 30px auto; padding: 32px 28px;">
+            {% if current_user_id %}
+            <div style="text-align: center; padding: 20px 0;">
+                <div style="font-size: 42px; margin-bottom: 12px;">👤</div>
+                <h3>Already Signed In</h3>
+                <p style="color: var(--text-muted); margin-bottom: 20px;">
+                    You are logged in as <strong>{{ current_username }}</strong>
+                    {% if current_user_is_admin %}<span class="admin-pill">Admin</span>{% endif %}
+                </p>
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <a href="{{ url_for('views.index') }}" class="btn btn-primary btn-sm">Go to Home</a>
+                    <button class="btn btn-secondary btn-sm" onclick="logout()">Sign Out</button>
+                </div>
+            </div>
+            {% else %}
+            <h2 style="margin-bottom: 8px;">Admin Credentials</h2>
+            <p style="color: var(--text-muted); font-size: 13.5px; margin-bottom: 24px;">
+                Enter your administrative credentials to unlock system settings.
+            </p>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" placeholder="admin" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="••••••••" required>
+                </div>
+
+                <div id="loginMessage" class="toast error" style="display: none; margin-bottom: 18px;"></div>
+
+                <button type="submit" id="loginBtn" class="btn btn-primary btn-block">Sign In</button>
+            </form>
+            {% endif %}
+        </div>
     </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script>
         const form = document.getElementById('loginForm');
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
+        if (form) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
 
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
+                const username = document.getElementById('username').value.trim();
+                const password = document.getElementById('password').value;
 
-            const msgEl = document.getElementById('loginMessage');
-            msgEl.textContent = '';
-            msgEl.style.display = 'none';
+                const msgEl = document.getElementById('loginMessage');
+                const btn = document.getElementById('loginBtn');
+                msgEl.style.display = 'none';
+                btn.disabled = true;
+                btn.textContent = 'Signing in...';
 
+                try {
+                    const resp = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ username, password }),
+                        credentials: 'same-origin',
+                    });
 
-            try {
-                const resp = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ username, password }),
-                    credentials: 'same-origin',
-                });
+                    const data = await resp.json().catch(() => ({}));
 
-                const data = await resp.json().catch(() => ({}));
+                    if (!resp.ok) {
+                        msgEl.textContent = data?.error || 'Invalid credentials. Please check your username and password.';
+                        msgEl.style.display = 'flex';
+                        btn.disabled = false;
+                        btn.textContent = 'Sign In';
+                        return;
+                    }
 
-                if (!resp.ok) {
-                    msgEl.textContent = data?.error || 'Login failed.';
-                    msgEl.style.display = 'block';
-                    return;
-
+                    showToast('Login successful! Redirecting...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 400);
+                } catch (err) {
+                    msgEl.textContent = 'Login failed due to a network or server error.';
+                    msgEl.style.display = 'flex';
+                    btn.disabled = false;
+                    btn.textContent = 'Sign In';
                 }
-
-                // Successful login: redirect to home
-                window.location.href = '/';
-            } catch (err) {
-                msgEl.textContent = 'Login failed (network/server error).';
-                msgEl.style.display = 'block';
-
-            }
-        });
+            });
+        }
     </script>
-
 </body>
 </html>

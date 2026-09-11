@@ -3,17 +3,258 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Select File - PDF Search System</title>
+    <title>Document Library - PDF Search System</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>Select a File</h1>
-        <nav>
-            <a href="{{ url_for('views.index') }}">Home</a>
-            <a href="{{ url_for('views.search_page') }}">Search</a>
+        <header class="header-section">
+            <div>
+                <h1>📚 Document Library</h1>
+                <p class="subtitle">Browse all uploaded PDF documents, inspect metadata, and launch scoped searches.</p>
+            </div>
+            {% if current_user_id %}
+            <div class="user-badge">
+                👤 <span>{{ current_username }}</span>
+                {% if current_user_is_admin %}
+                <span class="admin-pill">Admin</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </header>
+
+        <nav class="app-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('views.index') }}">🏠 Home</a>
+                <a href="{{ url_for('views.search_page') }}">🔍 Search</a>
+                <a href="{{ url_for('views.select_page') }}" class="active">📚 Browse Files</a>
+                <a href="{{ url_for('views.temp_upload_page') }}">⏱️ Temp Upload</a>
+                {% if current_user_is_admin %}
+                <a href="{{ url_for('views.admin_page') }}">⚙️ Admin</a>
+                <a href="{{ url_for('views.upload_page') }}">⬆️ Upload</a>
+                <a href="{{ url_for('views.delete_page') }}">🗑️ Delete</a>
+                {% endif %}
+            </div>
+            <div class="nav-user">
+                {% if current_user_is_admin %}
+                <a href="{{ url_for('views.upload_page') }}" class="btn btn-primary btn-sm">+ Upload PDF</a>
+                {% endif %}
+                {% if current_user_id %}
+                <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+                {% else %}
+                <a href="{{ url_for('views.login_page') }}" class="btn btn-primary btn-sm">Login</a>
+                {% endif %}
+            </div>
         </nav>
-        <p>Select a PDF file to search within.</p>
+
+        <!-- Search / Filter Bar -->
+        <div class="search-bar-wrap">
+            <input type="text" id="filterInput" class="search-input" placeholder="Filter documents by filename..." oninput="handleLocalFilter()">
+        </div>
+
+        <!-- Category Filter Tabs -->
+        <div id="categoryTabs" class="filter-tabs">
+            <button class="filter-tab active" data-cat-id="all" onclick="selectCategoryTab('all')">All Documents (<span id="totalFileCount">0</span>)</button>
+        </div>
+
+        <!-- Files List View -->
+        <div id="loadingIndicator" class="loading-state">
+            <div class="spinner" style="width: 32px; height: 32px; margin-bottom: 12px; color: var(--primary);"></div>
+            <div>Loading documents...</div>
+        </div>
+
+        <div id="filesTableWrap" class="table-responsive" style="display: none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Document</th>
+                        <th>Category</th>
+                        <th>Size</th>
+                        <th>Pages</th>
+                        <th>Status</th>
+                        <th>Uploaded</th>
+                        <th style="text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="filesTbody"></tbody>
+            </table>
+        </div>
+
+        <div id="emptyFiles" class="empty-state" style="display: none;">
+            <div class="empty-state-icon">📂</div>
+            <h3>No documents found</h3>
+            <p>No PDF files are available in this category. {% if current_user_is_admin %}Upload your first document to get started.{% endif %}</p>
+            {% if current_user_is_admin %}
+            <a href="{{ url_for('views.upload_page') }}" class="btn btn-primary btn-sm" style="margin-top: 14px;">Upload Document</a>
+            {% endif %}
+        </div>
     </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        let allFiles = [];
+        let currentCatId = 'all';
+        const isAdmin = {{ 'true' if current_user_is_admin else 'false' }};
+
+        async function initLibrary() {
+            await Promise.all([loadCategories(), loadAllFiles()]);
+        }
+
+        async function loadCategories() {
+            try {
+                const res = await fetch('/api/categories');
+                if (res.ok) {
+                    const data = await res.json();
+                    const tabsContainer = document.getElementById('categoryTabs');
+                    (data.categories || []).forEach(cat => {
+                        const btn = document.createElement('button');
+                        btn.className = 'filter-tab';
+                        btn.dataset.catId = cat.id;
+                        btn.textContent = `${cat.name} (${cat.file_count || 0})`;
+                        btn.onclick = () => selectCategoryTab(cat.id);
+                        tabsContainer.appendChild(btn);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load categories:', err);
+            }
+        }
+
+        async function loadAllFiles() {
+            const loading = document.getElementById('loadingIndicator');
+            const tableWrap = document.getElementById('filesTableWrap');
+            const empty = document.getElementById('emptyFiles');
+
+            loading.style.display = 'block';
+            tableWrap.style.display = 'none';
+            empty.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/files?all=1&page_size=100');
+                if (res.ok) {
+                    const data = await res.json();
+                    allFiles = data.data || [];
+                    document.getElementById('totalFileCount').textContent = allFiles.length;
+                    renderFilesList();
+                } else {
+                    showToast('Failed to load document library.', 'error');
+                }
+            } catch (err) {
+                console.error('Failed to load files:', err);
+                showToast('Network error while loading files.', 'error');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function selectCategoryTab(catId) {
+            currentCatId = catId;
+            document.querySelectorAll('.filter-tab').forEach(t => {
+                if (String(t.dataset.catId) === String(catId)) {
+                    t.classList.add('active');
+                } else {
+                    t.classList.remove('active');
+                }
+            });
+            renderFilesList();
+        }
+
+        function handleLocalFilter() {
+            renderFilesList();
+        }
+
+        function renderFilesList() {
+            const tbody = document.getElementById('filesTbody');
+            const tableWrap = document.getElementById('filesTableWrap');
+            const empty = document.getElementById('emptyFiles');
+            const filterText = document.getElementById('filterInput').value.toLowerCase().trim();
+
+            tbody.innerHTML = '';
+
+            let filtered = allFiles.filter(f => {
+                const matchesCategory = (currentCatId === 'all' || String(f.category_id) === String(currentCatId));
+                const matchesSearch = !filterText || (f.original_name && f.original_name.toLowerCase().includes(filterText))
+                                                || (f.filename && f.filename.toLowerCase().includes(filterText));
+                return matchesCategory && matchesSearch;
+            });
+
+            if (filtered.length === 0) {
+                tableWrap.style.display = 'none';
+                empty.style.display = 'block';
+                return;
+            }
+
+            empty.style.display = 'none';
+            tableWrap.style.display = 'block';
+
+            filtered.forEach(file => {
+                const tr = document.createElement('tr');
+
+                // Status badge
+                let statusBadge = `<span class="badge badge-${file.index_status}">${file.index_status}</span>`;
+                if (file.is_temp) {
+                    statusBadge += ` <span class="badge badge-temp">Temp</span>`;
+                }
+
+                const serveUrl = `/api/files/${file.id}/serve`;
+                const searchUrl = `/search?file_id=${file.id}`;
+
+                tr.innerHTML = `
+                    <td>
+                        <div style="font-weight: 600; color: var(--text-main);">
+                            <a href="${serveUrl}" target="_blank" style="color: inherit; text-decoration: none;">📄 ${escapeHtml(file.original_name || file.filename)}</a>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted); font-family: monospace;">${escapeHtml(file.filename)}</div>
+                    </td>
+                    <td><span class="badge badge-category">${escapeHtml(file.category_slug || 'General')}</span></td>
+                    <td>${formatBytes(file.file_size)}</td>
+                    <td>${file.page_count ? `${file.page_count} pgs` : '—'}</td>
+                    <td>${statusBadge}</td>
+                    <td>${formatDate(file.created_at)}</td>
+                    <td style="text-align: right;">
+                        <div style="display: inline-flex; gap: 6px;">
+                            <a href="${searchUrl}" class="btn btn-secondary btn-sm" title="Search within this PDF">🔍 Search</a>
+                            <a href="${serveUrl}" target="_blank" class="btn btn-secondary btn-sm" title="Open or download PDF">👁️ View</a>
+                            ${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="deleteDoc(${file.id}, '${escapeHtml(file.original_name || file.filename)}')">🗑️</button>` : ''}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function deleteDoc(fileId, name) {
+            if (!confirm(`Are you sure you want to permanently delete "${name}"?`)) return;
+
+            try {
+                const res = await fetch(`/api/files/${fileId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(`File "${name}" deleted successfully.`, 'success');
+                    allFiles = allFiles.filter(f => f.id !== fileId);
+                    document.getElementById('totalFileCount').textContent = allFiles.length;
+                    renderFilesList();
+                } else {
+                    showToast(data.error || 'Failed to delete file.', 'error');
+                }
+            } catch (err) {
+                console.error('Delete error:', err);
+                showToast('Network error while deleting file.', 'error');
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                "'": '&#39;',
+                '"': '&quot;'
+            }[tag] || tag));
+        }
+
+        window.addEventListener('DOMContentLoaded', initLibrary);
+    </script>
 </body>
 </html>

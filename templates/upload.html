@@ -3,23 +3,375 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload - PDF Search System</title>
+    <title>Upload Document - PDF Search System</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>Upload PDF</h1>
-        <nav>
-            <a href="{{ url_for('views.index') }}">Home</a>
-            <a href="{{ url_for('views.admin_page') }}">Admin</a>
+        <header class="header-section">
+            <div>
+                <h1>⬆️ Upload PDF Document</h1>
+                <p class="subtitle">Upload a permanent document into a categorized archive for FTS5 full-text indexing.</p>
+            </div>
+            {% if current_user_id %}
+            <div class="user-badge">
+                👤 <span>{{ current_username }}</span>
+                <span class="admin-pill">Admin</span>
+            </div>
+            {% endif %}
+        </header>
+
+        <nav class="app-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('views.index') }}">🏠 Home</a>
+                <a href="{{ url_for('views.search_page') }}">🔍 Search</a>
+                <a href="{{ url_for('views.select_page') }}">📚 Browse Files</a>
+                <a href="{{ url_for('views.temp_upload_page') }}">⏱️ Temp Upload</a>
+                <a href="{{ url_for('views.admin_page') }}">⚙️ Admin</a>
+                <a href="{{ url_for('views.upload_page') }}" class="active">⬆️ Upload</a>
+                <a href="{{ url_for('views.delete_page') }}">🗑️ Delete</a>
+            </div>
+            <div class="nav-user">
+                <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+            </div>
         </nav>
-        <form id="uploadForm" enctype="multipart/form-data">
-            <input type="file" id="pdf" name="pdf" accept=".pdf" required>
-            <select id="category_id" name="category_id">
-                <option value="">Select category</option>
-            </select>
-            <button type="submit">Upload</button>
-        </form>
+
+        <!-- Upload Form Card -->
+        <div id="uploadCard" class="card" style="max-width: 680px; margin: 0 auto;">
+            <form id="uploadForm">
+                <!-- Category Field -->
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label for="categoryId" style="margin-bottom: 0;">Target Category *</label>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="toggleNewCategoryModal(true)">+ New Category</button>
+                    </div>
+                    <select id="categoryId" name="category_id" required>
+                        <option value="">Select a category...</option>
+                    </select>
+                    <div class="input-hint">Documents are permanently stored inside category folders.</div>
+                </div>
+
+                <!-- Drag & Drop Zone -->
+                <div class="form-group">
+                    <label>PDF File *</label>
+                    <div id="dropzone" class="dropzone">
+                        <input type="file" id="pdfInput" name="pdf" accept=".pdf" style="display: none;" required>
+                        <div class="dropzone-icon">📁</div>
+                        <div class="dropzone-title">Drag & drop your PDF file here</div>
+                        <div class="dropzone-sub">or click to browse from your computer (Max: 32 MB)</div>
+                    </div>
+
+                    <!-- Selected File Banner -->
+                    <div id="fileChosenBanner" class="file-chosen-banner">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 20px;">📄</span>
+                            <div>
+                                <strong id="chosenFileName">filename.pdf</strong>
+                                <span id="chosenFileSize" style="color: var(--text-muted); font-size: 13px; margin-left: 8px;">(1.2 MB)</span>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearSelectedFile()">Remove</button>
+                    </div>
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn btn-primary btn-block" style="margin-top: 24px;">
+                    <span id="submitBtnText">Upload & Start Indexing</span>
+                </button>
+            </form>
+        </div>
+
+        <!-- Live Indexing Progress Tracker Card -->
+        <div id="statusCard" class="card" style="display: none; max-width: 680px; margin: 24px auto; text-align: center; padding: 36px 24px;">
+            <div id="statusSpinner" class="spinner" style="width: 44px; height: 44px; margin-bottom: 16px; color: var(--primary);"></div>
+            <div id="statusIcon" style="display: none; font-size: 48px; margin-bottom: 12px;">✅</div>
+            
+            <h2 id="statusHeading">Indexing Document...</h2>
+            <p id="statusDetails" style="color: var(--text-muted); margin-bottom: 24px;">
+                Extracting text and building full-text search index entries...
+            </p>
+
+            <div id="statusActions" style="display: none; justify-content: center; gap: 12px; flex-wrap: wrap;">
+                <a id="searchFileBtn" href="#" class="btn btn-primary">🔍 Search Inside Document</a>
+                <a id="viewFileBtn" href="#" target="_blank" class="btn btn-secondary">👁️ View PDF</a>
+                <button type="button" class="btn btn-secondary" onclick="resetUploadForm()">Upload Another</button>
+            </div>
+        </div>
+
+        <!-- Quick Create Category Modal / Inline Block -->
+        <div id="newCatModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); z-index: 999; align-items: center; justify-content: center; padding: 20px;">
+            <div class="card" style="max-width: 420px; width: 100%; box-shadow: var(--shadow-xl);">
+                <h2>Create New Category</h2>
+                <p class="subtitle" style="margin-bottom: 16px;">Categories organize documents and group search scopes.</p>
+                <div class="form-group">
+                    <label for="newCatName">Category Name *</label>
+                    <input type="text" id="newCatName" placeholder="e.g. Compliance Policies, Product Manuals" autofocus>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="toggleNewCategoryModal(false)">Cancel</button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="createNewCategory()">Create Category</button>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        let pollInterval = null;
+        let activeFileId = null;
+
+        async function initUploadPage() {
+            await loadCategoriesDropdown();
+            setupDropzone();
+        }
+
+        async function loadCategoriesDropdown(selectedId = null) {
+            try {
+                const res = await fetch('/api/categories');
+                if (res.ok) {
+                    const data = await res.json();
+                    const sel = document.getElementById('categoryId');
+                    sel.innerHTML = '<option value="">Select a category...</option>';
+                    (data.categories || []).forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.id;
+                        opt.textContent = `${c.name} (${c.file_count || 0} files)`;
+                        if (selectedId && String(c.id) === String(selectedId)) {
+                            opt.selected = true;
+                        }
+                        sel.appendChild(opt);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load categories:', err);
+                showToast('Failed to load categories.', 'error');
+            }
+        }
+
+        function setupDropzone() {
+            const dropzone = document.getElementById('dropzone');
+            const pdfInput = document.getElementById('pdfInput');
+
+            dropzone.addEventListener('click', () => pdfInput.click());
+
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.classList.add('dragover');
+            });
+
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.classList.remove('dragover');
+            });
+
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    pdfInput.files = e.dataTransfer.files;
+                    handleFileSelection();
+                }
+            });
+
+            pdfInput.addEventListener('change', handleFileSelection);
+        }
+
+        function handleFileSelection() {
+            const pdfInput = document.getElementById('pdfInput');
+            const file = pdfInput.files[0];
+            if (!file) return;
+
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                showToast('Please select a valid PDF file.', 'error');
+                clearSelectedFile();
+                return;
+            }
+
+            if (file.size > 32 * 1024 * 1024) {
+                showToast('File size exceeds the 32 MB limit.', 'error');
+                clearSelectedFile();
+                return;
+            }
+
+            document.getElementById('dropzone').style.display = 'none';
+            const banner = document.getElementById('fileChosenBanner');
+            document.getElementById('chosenFileName').textContent = file.name;
+            document.getElementById('chosenFileSize').textContent = `(${formatBytes(file.size)})`;
+            banner.style.display = 'flex';
+        }
+
+        function clearSelectedFile() {
+            document.getElementById('pdfInput').value = '';
+            document.getElementById('fileChosenBanner').style.display = 'none';
+            document.getElementById('dropzone').style.display = 'block';
+        }
+
+        // Upload submission
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const pdfInput = document.getElementById('pdfInput');
+            const categoryId = document.getElementById('categoryId').value;
+
+            if (!pdfInput.files || !pdfInput.files[0]) {
+                showToast('Please choose a PDF to upload.', 'error');
+                return;
+            }
+
+            if (!categoryId) {
+                showToast('Please choose a category.', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('pdf', pdfInput.files[0]);
+            formData.append('category_id', categoryId);
+
+            const submitBtn = document.getElementById('submitBtn');
+            const submitBtnText = document.getElementById('submitBtnText');
+            submitBtn.disabled = true;
+            submitBtnText.textContent = 'Uploading to server...';
+
+            try {
+                const res = await fetch('/api/files/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await res.json();
+                if (res.status === 201 && data.file) {
+                    activeFileId = data.file.id;
+                    showToast('Upload successful! Beginning text indexing...', 'success');
+                    startPollingStatus(activeFileId, data.file.original_name);
+                } else if (res.status === 409) {
+                    showToast(data.error || 'Duplicate file detected: content already indexed in this category.', 'error');
+                    submitBtn.disabled = false;
+                    submitBtnText.textContent = 'Upload & Start Indexing';
+                } else {
+                    showToast(data.error || 'Upload failed.', 'error');
+                    submitBtn.disabled = false;
+                    submitBtnText.textContent = 'Upload & Start Indexing';
+                }
+            } catch (err) {
+                console.error('Upload error:', err);
+                showToast('Network error during upload.', 'error');
+                submitBtn.disabled = false;
+                submitBtnText.textContent = 'Upload & Start Indexing';
+            }
+        });
+
+        function startPollingStatus(fileId, originalName) {
+            document.getElementById('uploadCard').style.display = 'none';
+            const statusCard = document.getElementById('statusCard');
+            statusCard.style.display = 'block';
+
+            document.getElementById('statusHeading').textContent = `Indexing "${originalName}"...`;
+            document.getElementById('statusDetails').textContent = 'Extracting PDF pages and inserting into SQLite FTS5 index...';
+            document.getElementById('statusSpinner').style.display = 'inline-block';
+            document.getElementById('statusIcon').style.display = 'none';
+            document.getElementById('statusActions').style.display = 'none';
+
+            if (pollInterval) clearInterval(pollInterval);
+
+            pollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/files/${fileId}/status`);
+                    if (res.ok) {
+                        const statusData = await res.json();
+                        const status = statusData.index_status;
+
+                        if (status === 'indexed') {
+                            clearInterval(pollInterval);
+                            onIndexingComplete(fileId, originalName, statusData.page_count);
+                        } else if (status === 'failed') {
+                            clearInterval(pollInterval);
+                            onIndexingFailed(statusData.index_error);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Status poll failed:', e);
+                }
+            }, 1500);
+        }
+
+        function onIndexingComplete(fileId, originalName, pageCount) {
+            document.getElementById('statusSpinner').style.display = 'none';
+            const icon = document.getElementById('statusIcon');
+            icon.style.display = 'block';
+            icon.textContent = '✅';
+
+            document.getElementById('statusHeading').textContent = 'Indexing Complete!';
+            document.getElementById('statusDetails').textContent = `Document "${originalName}" was successfully processed (${pageCount || 1} pages indexed).`;
+
+            const searchBtn = document.getElementById('searchFileBtn');
+            searchBtn.href = `/search?file_id=${fileId}`;
+
+            const viewBtn = document.getElementById('viewFileBtn');
+            viewBtn.href = `/api/files/${fileId}/serve`;
+
+            document.getElementById('statusActions').style.display = 'flex';
+            showToast('Document indexed and ready for search!', 'success');
+        }
+
+        function onIndexingFailed(errorMsg) {
+            document.getElementById('statusSpinner').style.display = 'none';
+            const icon = document.getElementById('statusIcon');
+            icon.style.display = 'block';
+            icon.textContent = '❌';
+
+            document.getElementById('statusHeading').textContent = 'Indexing Failed';
+            document.getElementById('statusDetails').textContent = errorMsg || 'The PDF file could not be parsed or contains invalid data.';
+
+            document.getElementById('statusActions').style.display = 'flex';
+            document.getElementById('searchFileBtn').style.display = 'none';
+            showToast('Indexing failed.', 'error');
+        }
+
+        function resetUploadForm() {
+            clearSelectedFile();
+            document.getElementById('uploadCard').style.display = 'block';
+            document.getElementById('statusCard').style.display = 'none';
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtnText').textContent = 'Upload & Start Indexing';
+            loadCategoriesDropdown();
+        }
+
+        // Inline Category Creation
+        function toggleNewCategoryModal(show) {
+            const modal = document.getElementById('newCatModal');
+            modal.style.display = show ? 'flex' : 'none';
+            if (show) {
+                document.getElementById('newCatName').value = '';
+                document.getElementById('newCatName').focus();
+            }
+        }
+
+        async function createNewCategory() {
+            const name = document.getElementById('newCatName').value.trim();
+            if (!name) {
+                showToast('Please enter a category name.', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/categories', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const data = await res.json();
+                if (res.status === 201 && data.category) {
+                    showToast(`Category "${data.category.name}" created!`, 'success');
+                    toggleNewCategoryModal(false);
+                    await loadCategoriesDropdown(data.category.id);
+                } else {
+                    showToast(data.error || 'Failed to create category.', 'error');
+                }
+            } catch (err) {
+                console.error('Error creating category:', err);
+                showToast('Network error while creating category.', 'error');
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', initUploadPage);
+    </script>
 </body>
 </html>

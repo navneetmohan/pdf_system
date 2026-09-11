@@ -25,9 +25,9 @@ with app.app_context():
 
 
 if __name__ == "__main__":
-    # Development server only — never use in production
     app.run(
-        host=os.getenv("HOST", "127.0.0.1"),
-        port=int(os.getenv("PORT", 5000)),
-        debug=config.DEBUG,
+        host="127.0.0.1",
+        # PORT is reserved for gunicorn/production; dev server uses FLASK_PORT (default 5000)
+        port=int(os.getenv("FLASK_PORT", "5000")),
+        debug=True,
     )

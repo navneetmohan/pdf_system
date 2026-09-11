@@ -3,21 +3,293 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Temp Upload - PDF Search System</title>
+    <title>Temporary Upload - PDF Search System</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>Temporary Upload</h1>
-        <nav>
-            <a href="{{ url_for('views.index') }}">Home</a>
-            <a href="{{ url_for('views.search_page') }}">Search</a>
+        <header class="header-section">
+            <div>
+                <h1>⏱️ Temporary PDF Upload</h1>
+                <p class="subtitle">Quickly upload and search any document without signing in. Files are automatically purged after 14 hours.</p>
+            </div>
+            {% if current_user_id %}
+            <div class="user-badge">
+                👤 <span>{{ current_username }}</span>
+                {% if current_user_is_admin %}
+                <span class="admin-pill">Admin</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </header>
+
+        <nav class="app-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('views.index') }}">🏠 Home</a>
+                <a href="{{ url_for('views.search_page') }}">🔍 Search</a>
+                <a href="{{ url_for('views.select_page') }}">📚 Browse Files</a>
+                <a href="{{ url_for('views.temp_upload_page') }}" class="active">⏱️ Temp Upload</a>
+                {% if current_user_is_admin %}
+                <a href="{{ url_for('views.admin_page') }}">⚙️ Admin</a>
+                <a href="{{ url_for('views.upload_page') }}">⬆️ Upload</a>
+                <a href="{{ url_for('views.delete_page') }}">🗑️ Delete</a>
+                {% endif %}
+            </div>
+            <div class="nav-user">
+                {% if current_user_id %}
+                <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+                {% else %}
+                <a href="{{ url_for('views.login_page') }}" class="btn btn-primary btn-sm">Login</a>
+                {% endif %}
+            </div>
         </nav>
-        <p>Upload a temporary PDF (expires after 14 hours).</p>
-        <form id="tempUploadForm" enctype="multipart/form-data">
-            <input type="file" id="pdf" name="pdf" accept=".pdf" required>
-            <button type="submit">Upload</button>
-        </form>
+
+        <!-- Temporary Feature Information Banner -->
+        <div class="card" style="background: #fdf4ff; border-color: #f0abfc; margin-bottom: 24px;">
+            <div style="display: flex; gap: 14px; align-items: flex-start;">
+                <span style="font-size: 24px;">💡</span>
+                <div>
+                    <h3 style="color: #86198f; font-size: 16px; margin-bottom: 4px;">Public Quick Search Mode</h3>
+                    <p style="color: #701a75; font-size: 13.5px; margin-bottom: 0;">
+                        Upload any PDF up to 32 MB for instant FTS5 indexing. No account required. All temporary files are strictly sandboxed and permanently removed from disk and database after 14 hours.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Form Card -->
+        <div id="uploadCard" class="card" style="max-width: 680px; margin: 0 auto;">
+            <form id="tempUploadForm">
+                <div class="form-group">
+                    <label>Select PDF File *</label>
+                    <div id="dropzone" class="dropzone">
+                        <input type="file" id="pdfInput" name="pdf" accept=".pdf" style="display: none;" required>
+                        <div class="dropzone-icon">⚡</div>
+                        <div class="dropzone-title">Drag & drop your temporary PDF here</div>
+                        <div class="dropzone-sub">or click to browse from your computer (Max: 32 MB)</div>
+                    </div>
+
+                    <!-- Selected File Banner -->
+                    <div id="fileChosenBanner" class="file-chosen-banner">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 20px;">📄</span>
+                            <div>
+                                <strong id="chosenFileName">filename.pdf</strong>
+                                <span id="chosenFileSize" style="color: var(--text-muted); font-size: 13px; margin-left: 8px;">(1.2 MB)</span>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearSelectedFile()">Remove</button>
+                    </div>
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn btn-primary btn-block" style="margin-top: 20px;">
+                    <span id="submitBtnText">Upload & Analyze Document</span>
+                </button>
+            </form>
+        </div>
+
+        <!-- Live Indexing Progress Tracker Card -->
+        <div id="statusCard" class="card" style="display: none; max-width: 680px; margin: 24px auto; text-align: center; padding: 36px 24px;">
+            <div id="statusSpinner" class="spinner" style="width: 44px; height: 44px; margin-bottom: 16px; color: var(--primary);"></div>
+            <div id="statusIcon" style="display: none; font-size: 48px; margin-bottom: 12px;">✅</div>
+            
+            <h2 id="statusHeading">Indexing Document...</h2>
+            <p id="statusDetails" style="color: var(--text-muted); margin-bottom: 24px;">
+                Extracting text and building full-text search index entries...
+            </p>
+
+            <div id="statusActions" style="display: none; justify-content: center; gap: 12px; flex-wrap: wrap;">
+                <a id="searchFileBtn" href="#" class="btn btn-primary">🔍 Search This Document</a>
+                <a id="viewFileBtn" href="#" target="_blank" class="btn btn-secondary">👁️ View PDF</a>
+                <button type="button" class="btn btn-secondary" onclick="resetUploadForm()">Upload Another</button>
+            </div>
+        </div>
     </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        let pollInterval = null;
+        let activeFileId = null;
+
+        function setupDropzone() {
+            const dropzone = document.getElementById('dropzone');
+            const pdfInput = document.getElementById('pdfInput');
+
+            dropzone.addEventListener('click', () => pdfInput.click());
+
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.classList.add('dragover');
+            });
+
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.classList.remove('dragover');
+            });
+
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    pdfInput.files = e.dataTransfer.files;
+                    handleFileSelection();
+                }
+            });
+
+            pdfInput.addEventListener('change', handleFileSelection);
+        }
+
+        function handleFileSelection() {
+            const pdfInput = document.getElementById('pdfInput');
+            const file = pdfInput.files[0];
+            if (!file) return;
+
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                showToast('Please select a valid PDF file.', 'error');
+                clearSelectedFile();
+                return;
+            }
+
+            if (file.size > 32 * 1024 * 1024) {
+                showToast('File size exceeds the 32 MB limit.', 'error');
+                clearSelectedFile();
+                return;
+            }
+
+            document.getElementById('dropzone').style.display = 'none';
+            const banner = document.getElementById('fileChosenBanner');
+            document.getElementById('chosenFileName').textContent = file.name;
+            document.getElementById('chosenFileSize').textContent = `(${formatBytes(file.size)})`;
+            banner.style.display = 'flex';
+        }
+
+        function clearSelectedFile() {
+            document.getElementById('pdfInput').value = '';
+            document.getElementById('fileChosenBanner').style.display = 'none';
+            document.getElementById('dropzone').style.display = 'block';
+        }
+
+        // Upload Form
+        document.getElementById('tempUploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const pdfInput = document.getElementById('pdfInput');
+            if (!pdfInput.files || !pdfInput.files[0]) {
+                showToast('Please select a PDF file first.', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('pdf', pdfInput.files[0]);
+
+            const submitBtn = document.getElementById('submitBtn');
+            const submitBtnText = document.getElementById('submitBtnText');
+            submitBtn.disabled = true;
+            submitBtnText.textContent = 'Uploading temporary file...';
+
+            try {
+                const res = await fetch('/api/files/temp-upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await res.json();
+                if (res.status === 201 && data.file) {
+                    activeFileId = data.file.id;
+                    showToast('File uploaded! Starting background indexing...', 'success');
+                    startPollingStatus(activeFileId, data.file.original_name);
+                } else if (res.status === 429) {
+                    showToast('Upload rate limit reached (5 per minute). Please wait a moment.', 'error');
+                    submitBtn.disabled = false;
+                    submitBtnText.textContent = 'Upload & Analyze Document';
+                } else {
+                    showToast(data.error || 'Temporary upload failed.', 'error');
+                    submitBtn.disabled = false;
+                    submitBtnText.textContent = 'Upload & Analyze Document';
+                }
+            } catch (err) {
+                console.error('Upload error:', err);
+                showToast('Network error during upload.', 'error');
+                submitBtn.disabled = false;
+                submitBtnText.textContent = 'Upload & Analyze Document';
+            }
+        });
+
+        function startPollingStatus(fileId, originalName) {
+            document.getElementById('uploadCard').style.display = 'none';
+            const statusCard = document.getElementById('statusCard');
+            statusCard.style.display = 'block';
+
+            document.getElementById('statusHeading').textContent = `Processing "${originalName}"...`;
+            document.getElementById('statusDetails').textContent = 'Extracting pages and preparing full-text search index...';
+            document.getElementById('statusSpinner').style.display = 'inline-block';
+            document.getElementById('statusIcon').style.display = 'none';
+            document.getElementById('statusActions').style.display = 'none';
+
+            if (pollInterval) clearInterval(pollInterval);
+
+            pollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/files/${fileId}/status`);
+                    if (res.ok) {
+                        const statusData = await res.json();
+                        const status = statusData.index_status;
+
+                        if (status === 'indexed') {
+                            clearInterval(pollInterval);
+                            onIndexingComplete(fileId, originalName, statusData.page_count);
+                        } else if (status === 'failed') {
+                            clearInterval(pollInterval);
+                            onIndexingFailed(statusData.index_error);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Status poll failed:', e);
+                }
+            }, 1500);
+        }
+
+        function onIndexingComplete(fileId, originalName, pageCount) {
+            document.getElementById('statusSpinner').style.display = 'none';
+            const icon = document.getElementById('statusIcon');
+            icon.style.display = 'block';
+            icon.textContent = '✅';
+
+            document.getElementById('statusHeading').textContent = 'Ready for Search!';
+            document.getElementById('statusDetails').textContent = `"${originalName}" has been indexed (${pageCount || 1} pages). You can now search within this file.`;
+
+            const searchBtn = document.getElementById('searchFileBtn');
+            searchBtn.href = `/search?file_id=${fileId}`;
+
+            const viewBtn = document.getElementById('viewFileBtn');
+            viewBtn.href = `/api/files/${fileId}/serve`;
+
+            document.getElementById('statusActions').style.display = 'flex';
+            showToast('Document indexed and ready for search!', 'success');
+        }
+
+        function onIndexingFailed(errorMsg) {
+            document.getElementById('statusSpinner').style.display = 'none';
+            const icon = document.getElementById('statusIcon');
+            icon.style.display = 'block';
+            icon.textContent = '❌';
+
+            document.getElementById('statusHeading').textContent = 'Indexing Failed';
+            document.getElementById('statusDetails').textContent = errorMsg || 'The PDF file could not be parsed or is corrupted.';
+
+            document.getElementById('statusActions').style.display = 'flex';
+            document.getElementById('searchFileBtn').style.display = 'none';
+            showToast('Indexing failed.', 'error');
+        }
+
+        function resetUploadForm() {
+            clearSelectedFile();
+            document.getElementById('uploadCard').style.display = 'block';
+            document.getElementById('statusCard').style.display = 'none';
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtnText').textContent = 'Upload & Analyze Document';
+        }
+
+        window.addEventListener('DOMContentLoaded', setupDropzone);
+    </script>
 </body>
 </html>

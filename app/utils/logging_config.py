@@ -82,9 +82,10 @@ def configure_logging(app: Flask):
     except OSError as e:
         logging.warning("Could not create log file handler: %s", e)
 
-    # Suppress noisy third-party loggers
+    # Reduce noisy third-party loggers (werkzeug stays at INFO so the
+    # "Running on ..." banner and access logs remain visible during startup)
     for noisy in ("werkzeug", "urllib3", "charset_normalizer"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+        logging.getLogger(noisy).setLevel(logging.INFO)
 
     # ── Request logging middleware ─────────────────────────────────────────────
     req_logger = logging.getLogger("request")

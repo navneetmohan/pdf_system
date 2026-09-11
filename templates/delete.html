@@ -3,17 +3,247 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delete - PDF Search System</title>
+    <title>Delete Documents - PDF Search System</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>Delete PDF</h1>
-        <nav>
-            <a href="{{ url_for('views.index') }}">Home</a>
-            <a href="{{ url_for('views.admin_page') }}">Admin</a>
+        <header class="header-section">
+            <div>
+                <h1>🗑️ Delete Documents</h1>
+                <p class="subtitle">Permanently delete stored PDF files and clean up full-text search index entries.</p>
+            </div>
+            {% if current_user_id %}
+            <div class="user-badge">
+                👤 <span>{{ current_username }}</span>
+                <span class="admin-pill">Admin</span>
+            </div>
+            {% endif %}
+        </header>
+
+        <nav class="app-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('views.index') }}">🏠 Home</a>
+                <a href="{{ url_for('views.search_page') }}">🔍 Search</a>
+                <a href="{{ url_for('views.select_page') }}">📚 Browse Files</a>
+                <a href="{{ url_for('views.temp_upload_page') }}">⏱️ Temp Upload</a>
+                <a href="{{ url_for('views.admin_page') }}">⚙️ Admin</a>
+                <a href="{{ url_for('views.upload_page') }}">⬆️ Upload</a>
+                <a href="{{ url_for('views.delete_page') }}" class="active">🗑️ Delete</a>
+            </div>
+            <div class="nav-user">
+                <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+            </div>
         </nav>
-        <p>Select a PDF file to delete.</p>
+
+        <!-- Warning Alert Banner -->
+        <div class="card" style="background: var(--danger-subtle); border-color: var(--danger-border); margin-bottom: 24px;">
+            <div style="display: flex; gap: 12px; align-items: flex-start;">
+                <span style="font-size: 24px;">⚠️</span>
+                <div>
+                    <h3 style="color: #991b1b; font-size: 15px; margin-bottom: 4px;">Permanent Deletion Warning</h3>
+                    <p style="color: #b91c1c; font-size: 13.5px; margin-bottom: 0;">
+                        Deleting a document removes the physical PDF from disk storage, deletes the database metadata record, and purges all indexed pages and text snippets from the SQLite FTS5 table immediately.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="search-controls" style="margin-bottom: 20px;">
+            <div style="flex: 1; min-width: 200px;">
+                <label for="filterInput">Filter by Name:</label>
+                <input type="text" id="filterInput" placeholder="Filter documents..." oninput="filterFiles()" style="margin-bottom: 0;">
+            </div>
+            <div>
+                <label for="categoryFilter">Category:</label>
+                <select id="categoryFilter" onchange="filterFiles()">
+                    <option value="all">All Categories</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loadingIndicator" class="loading-state">
+            <div class="spinner" style="width: 32px; height: 32px; margin-bottom: 12px; color: var(--primary);"></div>
+            <div>Loading documents for management...</div>
+        </div>
+
+        <!-- Files Table -->
+        <div id="tableWrap" class="table-responsive" style="display: none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Document</th>
+                        <th>Category</th>
+                        <th>Size</th>
+                        <th>Pages</th>
+                        <th>Uploaded</th>
+                        <th style="text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="filesTbody"></tbody>
+            </table>
+        </div>
+
+        <div id="emptyFiles" class="empty-state" style="display: none;">
+            <div class="empty-state-icon">📄</div>
+            <h3>No documents found</h3>
+            <p>There are no permanent PDF documents available to delete.</p>
+        </div>
     </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        let allFiles = [];
+
+        async function initDeletePage() {
+            await Promise.all([loadCategories(), loadFiles()]);
+        }
+
+        async function loadCategories() {
+            try {
+                const res = await fetch('/api/categories');
+                if (res.ok) {
+                    const data = await res.json();
+                    const sel = document.getElementById('categoryFilter');
+                    (data.categories || []).forEach(cat => {
+                        const opt = document.createElement('option');
+                        opt.value = cat.id;
+                        opt.textContent = `${cat.name} (${cat.file_count || 0})`;
+                        sel.appendChild(opt);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load categories:', err);
+            }
+        }
+
+        async function loadFiles() {
+            const loading = document.getElementById('loadingIndicator');
+            const tableWrap = document.getElementById('tableWrap');
+            const empty = document.getElementById('emptyFiles');
+
+            loading.style.display = 'block';
+            tableWrap.style.display = 'none';
+            empty.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/files?all=1&page_size=200');
+                if (res.ok) {
+                    const data = await res.json();
+                    allFiles = data.data || [];
+                    filterFiles();
+                } else {
+                    showToast('Failed to load files.', 'error');
+                }
+            } catch (err) {
+                console.error('Error fetching files:', err);
+                showToast('Network error while loading files.', 'error');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function filterFiles() {
+            const tbody = document.getElementById('filesTbody');
+            const tableWrap = document.getElementById('tableWrap');
+            const empty = document.getElementById('emptyFiles');
+
+            const catFilter = document.getElementById('categoryFilter').value;
+            const searchFilter = document.getElementById('filterInput').value.toLowerCase().trim();
+
+            tbody.innerHTML = '';
+
+            const filtered = allFiles.filter(f => {
+                const matchesCat = (catFilter === 'all' || String(f.category_id) === String(catFilter));
+                const matchesSearch = !searchFilter || 
+                    (f.original_name && f.original_name.toLowerCase().includes(searchFilter)) ||
+                    (f.filename && f.filename.toLowerCase().includes(searchFilter));
+                return matchesCat && matchesSearch;
+            });
+
+            if (filtered.length === 0) {
+                tableWrap.style.display = 'none';
+                empty.style.display = 'block';
+                return;
+            }
+
+            empty.style.display = 'none';
+            tableWrap.style.display = 'block';
+
+            filtered.forEach(file => {
+                const tr = document.createElement('tr');
+                tr.id = `file-row-${file.id}`;
+
+                const docName = file.original_name || file.filename;
+                const catSlug = file.category_slug || 'General';
+                const serveUrl = `/api/files/${file.id}/serve`;
+
+                tr.innerHTML = `
+                    <td>
+                        <div style="font-weight: 600;">
+                            <a href="${serveUrl}" target="_blank" style="color: inherit; text-decoration: none;">📄 ${escapeHtml(docName)}</a>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted); font-family: monospace;">${escapeHtml(file.filename)}</div>
+                    </td>
+                    <td><span class="badge badge-category">${escapeHtml(catSlug)}</span></td>
+                    <td>${formatBytes(file.file_size)}</td>
+                    <td>${file.page_count ? `${file.page_count} pgs` : '—'}</td>
+                    <td>${formatDate(file.created_at)}</td>
+                    <td style="text-align: right;">
+                        <div style="display: inline-flex; gap: 8px;">
+                            <a href="${serveUrl}" target="_blank" class="btn btn-secondary btn-sm" title="View PDF">👁️ View</a>
+                            <button class="btn btn-danger btn-sm" onclick="confirmDeleteFile(${file.id}, '${escapeHtml(docName)}')">🗑️ Delete</button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function confirmDeleteFile(fileId, name) {
+            const confirmed = confirm(`Are you sure you want to permanently delete document "${name}"?\nThis cannot be undone.`);
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`/api/files/${fileId}`, { method: 'DELETE' });
+                const data = await res.json();
+
+                if (res.ok) {
+                    showToast(`Document "${name}" deleted.`, 'success');
+                    // Remove from in-memory array
+                    allFiles = allFiles.filter(f => f.id !== fileId);
+                    // Remove row from DOM
+                    const row = document.getElementById(`file-row-${fileId}`);
+                    if (row) {
+                        row.remove();
+                    }
+                    if (allFiles.length === 0) {
+                        document.getElementById('tableWrap').style.display = 'none';
+                        document.getElementById('emptyFiles').style.display = 'block';
+                    }
+                } else {
+                    showToast(data.error || 'Failed to delete document.', 'error');
+                }
+            } catch (err) {
+                console.error('Delete document error:', err);
+                showToast('Network error while deleting document.', 'error');
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                "'": '&#39;',
+                '"': '&quot;'
+            }[tag] || tag));
+        }
+
+        window.addEventListener('DOMContentLoaded', initDeletePage);
+    </script>
 </body>
 </html>

@@ -3,18 +3,157 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Search System</title>
+    <title>PDF Search & Management System</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>PDF Search & Management System</h1>
-        <nav>
-            <a href="{{ url_for('views.search_page') }}">Search</a>
-            <a href="{{ url_for('views.select_page') }}">Select File</a>
-            <a href="{{ url_for('views.login_page') }}">Login</a>
+        <header class="header-section">
+            <div>
+                <h1>📄 PDF Search System</h1>
+                <p class="subtitle">Lightning-fast full-text document search powered by SQLite FTS5 & BM25 ranking.</p>
+            </div>
+            {% if current_user_id %}
+            <div class="user-badge">
+                👤 <span>{{ current_username }}</span>
+                {% if current_user_is_admin %}
+                <span class="admin-pill">Admin</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </header>
+
+        <nav class="app-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('views.index') }}" class="active">🏠 Home</a>
+                <a href="{{ url_for('views.search_page') }}">🔍 Search</a>
+                <a href="{{ url_for('views.select_page') }}">📚 Browse Files</a>
+                <a href="{{ url_for('views.temp_upload_page') }}">⏱️ Temp Upload</a>
+                {% if current_user_is_admin %}
+                <a href="{{ url_for('views.admin_page') }}">⚙️ Admin</a>
+                <a href="{{ url_for('views.upload_page') }}">⬆️ Upload</a>
+                <a href="{{ url_for('views.delete_page') }}">🗑️ Delete</a>
+                {% endif %}
+            </div>
+            <div class="nav-user">
+                {% if current_user_id %}
+                <button class="btn btn-secondary btn-sm" onclick="logout()">Logout</button>
+                {% else %}
+                <a href="{{ url_for('views.login_page') }}" class="btn btn-primary btn-sm">Login</a>
+                {% endif %}
+            </div>
         </nav>
-        <p>Welcome to the PDF Search System. Use the navigation above to get started.</p>
+
+        <!-- Quick Search Bar -->
+        <div class="card" style="margin-bottom: 28px; background: #f8fafc;">
+            <label for="quickQuery" style="font-size: 15px; margin-bottom: 10px;">Quick Search Documents</label>
+            <form id="quickSearchForm" class="search-bar-wrap" style="margin-bottom: 0;">
+                <input type="text" id="quickQuery" class="search-input" placeholder="Enter keywords, exact phrases (e.g. &quot;safety guidelines&quot;), or prefixes..." required>
+                <button type="submit" class="btn btn-primary">Search</button>
+            </form>
+        </div>
+
+        <!-- Metrics Row -->
+        <div class="grid-3" style="margin-bottom: 30px;">
+            <div class="stat-card">
+                <div class="stat-icon">📁</div>
+                <div>
+                    <div id="statCategories" class="stat-val">—</div>
+                    <div class="stat-label">Document Categories</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📑</div>
+                <div>
+                    <div id="statFiles" class="stat-val">—</div>
+                    <div class="stat-label">Indexed Documents</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📖</div>
+                <div>
+                    <div id="statPages" class="stat-val">—</div>
+                    <div class="stat-label">Indexed Pages</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Grid -->
+        <h2>Features & Tools</h2>
+        <div class="grid-2">
+            <div class="card card-hover">
+                <h3>🔍 Full-Text Search</h3>
+                <p>Search across all documents or drill down into specific files. Features BM25 ranking and keyword highlighting snippets.</p>
+                <a href="{{ url_for('views.search_page') }}" class="btn btn-primary btn-sm" style="margin-top: 12px;">Open Search Engine</a>
+            </div>
+
+            <div class="card card-hover">
+                <h3>📚 Document Library</h3>
+                <p>Browse indexed permanent PDFs by category, inspect file sizes, page counts, and start a search inside any document.</p>
+                <a href="{{ url_for('views.select_page') }}" class="btn btn-secondary btn-sm" style="margin-top: 12px;">Explore Library</a>
+            </div>
+
+            <div class="card card-hover">
+                <h3>⏱️ Temporary Upload</h3>
+                <p>Public dropzone for one-off PDF search. PDFs are automatically indexed and safely expired after 14 hours.</p>
+                <a href="{{ url_for('views.temp_upload_page') }}" class="btn btn-secondary btn-sm" style="margin-top: 12px;">Upload Temp File</a>
+            </div>
+
+            {% if current_user_is_admin %}
+            <div class="card card-hover" style="border-color: #fde68a; background: #fffbeb;">
+                <h3>⚙️ Admin Management</h3>
+                <p>Create document categories, upload permanent PDFs, track background indexing, and manage existing files.</p>
+                <a href="{{ url_for('views.admin_page') }}" class="btn btn-primary btn-sm" style="margin-top: 12px;">Admin Control Center</a>
+            </div>
+            {% else %}
+            <div class="card card-hover">
+                <h3>🔐 Admin Sign In</h3>
+                <p>Authorized personnel can log in to upload new documents, manage categories, and clean up files.</p>
+                <a href="{{ url_for('views.login_page') }}" class="btn btn-secondary btn-sm" style="margin-top: 12px;">Sign In</a>
+            </div>
+            {% endif %}
+        </div>
     </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // Quick search redirect
+        document.getElementById('quickSearchForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const q = document.getElementById('quickQuery').value.trim();
+            if (q) {
+                window.location.href = `/search?q=${encodeURIComponent(q)}`;
+            }
+        });
+
+        // Load stats
+        async function loadHomeStats() {
+            try {
+                const [catsRes, filesRes] = await Promise.all([
+                    fetch('/api/categories'),
+                    fetch('/api/files?all=1&page_size=100')
+                ]);
+
+                if (catsRes.ok) {
+                    const cData = await catsRes.json();
+                    const cats = cData.categories || [];
+                    document.getElementById('statCategories').textContent = cats.length;
+                }
+
+                if (filesRes.ok) {
+                    const fData = await filesRes.json();
+                    const files = fData.data || [];
+                    const totalFiles = fData.pagination?.total ?? files.length;
+                    document.getElementById('statFiles').textContent = totalFiles;
+
+                    const totalPages = files.reduce((acc, f) => acc + (f.page_count || 0), 0);
+                    document.getElementById('statPages').textContent = totalPages;
+                }
+            } catch (err) {
+                console.warn('Failed to load stats:', err);
+            }
+        }
+        loadHomeStats();
+    </script>
 </body>
 </html>

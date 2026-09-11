@@ -324,6 +324,34 @@ def test_list_files_by_category(client):
     assert len(data["data"]) >= 1
 
 
+def test_list_files_all(client):
+    """GET /api/files?all=1 returns paginated file list across all categories."""
+    cat = _create_category(_login_admin(client), "AllFilesCat")
+    pdf_bytes = _minimal_pdf_bytes("All files listing content.")
+    _upload_and_wait(client, pdf_bytes, "all_files.pdf", cat["id"])
+
+    resp = client.get("/api/files?all=1")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "data" in data
+    assert "pagination" in data
+    assert len(data["data"]) >= 1
+
+
+def test_list_files_temp(client):
+    """GET /api/files?temp=1 returns paginated temp file list."""
+    pdf_bytes = _minimal_pdf_bytes("Temporary list test content.")
+    data = {"pdf": (io.BytesIO(pdf_bytes), "temp_list.pdf")}
+    client.post("/api/files/temp-upload", data=data, content_type="multipart/form-data")
+
+    resp = client.get("/api/files?temp=1")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "data" in data
+    assert "pagination" in data
+    assert len(data["data"]) >= 1
+
+
 def test_serve_file(client):
     """GET /api/files/<id>/serve returns PDF bytes."""
     cat = _create_category(_login_admin(client), "Serveable2")

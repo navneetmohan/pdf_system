@@ -2,11 +2,21 @@
 HTML view routes. Serve the frontend templates.
 No business logic here — all data comes from the API endpoints.
 """
-from flask import Blueprint, redirect, render_template, url_for
+from flask import Blueprint, redirect, render_template, session, url_for
 
 from .utils.auth import is_admin
 
 views_bp = Blueprint("views", __name__)
+
+
+@views_bp.app_context_processor
+def inject_auth_state():
+    """Expose session auth state to all templates for nav rendering."""
+    return {
+        "current_user_is_admin": is_admin(),
+        "current_username": session.get("username"),
+        "current_user_id": session.get("user_id"),
+    }
 
 
 @views_bp.route("/")

@@ -171,6 +171,27 @@ class FileRepository:
         return [File.from_row(r) for r in rows], total
 
     @staticmethod
+    def list_all(page: int = 1, page_size: int = 20, include_temp: bool = False) -> tuple[list[File], int]:
+        """Paginated file listing across all categories. Returns (files, total_count)."""
+        offset = (page - 1) * page_size
+        where_clause = "" if include_temp else "WHERE f.is_temp = 0"
+        total = db.execute(
+            f"SELECT COUNT(*) FROM files f {where_clause}"
+        ).fetchone()[0]
+        rows = db.execute(
+            f"""
+            SELECT f.*, c.slug as category_slug
+            FROM files f
+            LEFT JOIN categories c ON c.id = f.category_id
+            {where_clause}
+            ORDER BY f.created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (page_size, offset),
+        ).fetchall()
+        return [File.from_row(r) for r in rows], total
+
+    @staticmethod
     def update_index_status(file_id: int, status: str, page_count: int = None, error: str = None):
         with db.transaction():
             db.execute(
